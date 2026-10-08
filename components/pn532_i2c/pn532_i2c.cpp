@@ -133,14 +133,14 @@ void PN532I2C::loop() {
     return;
 
   auto ready = this->read_ready_(false);
-  if (ready == WOULDBLOCK)
+  if (ready == pn532::WOULDBLOCK)
     return;
 
   bool success = false;
   std::vector<uint8_t> read;
 
-  if (ready == READY) {
-    success = this->read_response(PN532_COMMAND_INLISTPASSIVETARGET, read);
+  if (ready == pn532::READY) {
+    success = this->read_response(pn532::PN532_COMMAND_INLISTPASSIVETARGET, read);
   } else {
     this->send_ack_();  // abort still running InListPassiveTarget
   }
