@@ -37,6 +37,9 @@ If an `external_components:` section already exists, add this entry to its list 
 
 **[Step-by-step installation and rollback](docs/INSTALL-TEST.md)**
 
+**Experimental source version:** [`v0.1.0-beta.1`](https://github.com/DA6IT/esphome-adonno-nfc/tree/v0.1.0-beta.1) (beta, not a production release). The installation snippet above intentionally stays pinned to the proven source commit.
+
+
 ## Android app compatibility — important
 
 This is a **reader component only**, **not** a ready-to-install Android app or a universal NFC wallet reader. Your Android app must implement `HostApduService` using the protocol below.
