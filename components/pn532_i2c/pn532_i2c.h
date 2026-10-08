@@ -8,6 +8,8 @@
 #include "esphome/components/i2c/i2c.h"
 
 #include <vector>
+#include <memory>
+#include <string>
 
 namespace esphome::pn532_i2c {
 

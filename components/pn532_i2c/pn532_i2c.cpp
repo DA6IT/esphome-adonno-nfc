@@ -160,6 +160,12 @@ void PN532I2C::loop() {
     return;
   }
 
+  if (read.empty()) {
+    ESP_LOGW(TAG, "PN532 returned an empty tag response");
+    this->status_set_warning();
+    this->turn_off_rf_();
+    return;
+  }
   uint8_t num_targets = read[0];
   if (num_targets != 1) {
     // no tags found or too many
