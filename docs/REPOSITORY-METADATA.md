@@ -25,4 +25,4 @@ rfid
 
 GitHub supports up to 20 topic labels and treats them as public. Use the repository's **About** box to publish them. The general project source is under [README.md](../README.md).
 
-**Release policy:** the experimental source may be tagged `v0.1.0-beta.1` as a **beta** after all compile tests pass. It is **not a production release** and no firmware is deployed by tagging. Production readiness needs additional reliability and end-to-end tests. Continue pinning the verified commit from the README for installed readers.
+**Release policy:** do not mark the experimental hardware-tested code as a stable production release. An initial **pre-release** tag can follow additional reliability tests; installations can already pin the specific verified source commit from the README.

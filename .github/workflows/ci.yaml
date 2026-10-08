@@ -35,23 +35,3 @@ jobs:
         run: esphome config examples/tagreader-remote-ci.yaml
       - name: Compile remote component integration (no flashing, no OTA)
         run: esphome compile examples/tagreader-remote-ci.yaml
-  prerelease_tag:
-    # A one-off experimental source tag; only after the complete Linux CI is green.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.head_commit.message == 'chore: publish experimental beta tag'
-    needs: [parser, esphome]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Create beta Git tag (no GitHub release or device deployment)
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          TARGET_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          if gh api "repos/${REPOSITORY}/git/ref/tags/v0.1.0-beta.1" >/dev/null 2>&1; then
-            echo "Tag already exists; leaving it untouched."
-          else
-            gh api --method POST "repos/${REPOSITORY}/git/refs" --field ref="refs/tags/v0.1.0-beta.1" --field sha="${TARGET_SHA}"
-          fi
