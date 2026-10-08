@@ -1,0 +1,16 @@
+# Integration smoke test: remote component loaded exactly as users install it.
+# This file has NO private Wi-Fi credentials. Never flash test CI images.
+substitutions:
+  name: adonno-remote-ci
+  friendly_name: Adonno Remote CI
+
+packages:
+  adonno.tag_reader: github://adonno/tagreader/tagreader.yaml@a8bb6fc43e5a687503d1b43edb32855d0de7050a
+
+external_components:
+  - source: github://DA6IT/esphome-adonno-nfc@f89b5ef7f21067ecf64ed1b2a77bb322b8541df4
+    components: [pn532_i2c]
+
+esphome:
+  name: ${name}
+  name_add_mac_suffix: false

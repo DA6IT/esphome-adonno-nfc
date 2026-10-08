@@ -31,3 +31,7 @@ jobs:
         run: esphome config examples/tagreader-ci.yaml
       - name: Compile ESP8266 firmware only (no flashing, no OTA)
         run: esphome compile examples/tagreader-ci.yaml
+      - name: Validate pinned remote component integration
+        run: esphome config examples/tagreader-remote-ci.yaml
+      - name: Compile remote component integration (no flashing, no OTA)
+        run: esphome compile examples/tagreader-remote-ci.yaml
