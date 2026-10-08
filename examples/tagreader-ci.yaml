@@ -1,0 +1,18 @@
+# Experimental compile-only example. NEVER flash without a backup and approval.
+substitutions:
+  name: adonno-nfc-ci
+  friendly_name: Adonno NFC CI
+
+packages:
+  adonno.tag_reader: github://adonno/tagreader/tagreader.yaml@a8bb6fc43e5a687503d1b43edb32855d0de7050a
+
+# Override only ESPHome's I2C PN532 adapter; core PN532 and Adonno stay original.
+external_components:
+  - source:
+      type: local
+      path: ../components
+    components: [pn532_i2c]
+
+esphome:
+  name: ${name}
+  name_add_mac_suffix: false

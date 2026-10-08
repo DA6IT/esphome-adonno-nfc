@@ -1,0 +1,13 @@
+.esphome/
+.pio/
+.venv/
+__pycache__/
+*.pyc
+secrets.yaml
+*.bin
+*.elf
+*.map
+*.ota
+*.log
+.vscode/
+.idea/
