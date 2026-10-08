@@ -1,0 +1,38 @@
+name: Bug report
+description: Report a PN532 / ESPHome / Android HCE issue (no secrets, please)
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please redact all private IPs, card IDs, API keys, passwords and other sensitive information.
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware
+      placeholder: "Adonno ESP8266 + PN532 I2C"
+    validations:
+      required: true
+  - type: input
+    id: esphome
+    attributes:
+      label: ESPHome version
+      placeholder: "2026.9.1"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Expected and actual behavior
+      description: Include whether physical MIFARE cards continue to work.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized ESPHome logs (optional)
+      description: Use fabricated identifiers in place of real member or card numbers.
+      render: text
+    validations:
+      required: false

@@ -1,39 +1,62 @@
-# Staged setup on a real ESP8266 Adonno reader
+# Install and restore — Adonno ESP8266 / PN532 I²C
 
-This is a guide for a **controlled lab test**, not production instructions. The active Adonno YAML, the existing API encryption key, Wi-Fi settings, substitutions, OTA settings, custom I2C settings and local automations must be preserved.
+This is a step-by-step guide for an **existing ESPHome Adonno TagReader** with an **ESP8266 + PN532 over I²C**, using **ESPHome 2026.9.1**. Other hardware and ESPHome versions are not yet validated.
 
-## Stage A – before changing anything
+## Before changing anything
 
-1. Check this is **Reader 1 / `tagreader-df6508`**, not the matching reader in the Naturbad.
-2. In ESPHome Device Builder, save a copy of the complete working YAML and any necessary `!secret` values to an **offline, private location** (do not place secrets in public repos or chat). Keep the project package revision, ESPHome version and installed reader settings.
-3. Obtain a separate **known-good restore image**: build/download the current firmware in OTA format from the working YAML, or use a previous verified firmware image. A newly built image is *not* a byte-for-byte device flash backup; upstream package changes can make a rebuild differ from the currently installed image.
-4. For a full image of the exact installed state, connect the ESP8266 over USB/serial and use an appropriate ESP flash read method; first determine actual flash size, and treat the resulting image as secret-bearing local data. Confirm that the USB serial recovery path and restore tool are available **before OTA**.
-5. Test the normal physical card before changing the reader (record only a fake or redacted UID in shared notes).
-6. Do not flash before a separate explicit go/no-go review.
+1. In **ESPHome Device Builder → Edit**, back up the working reader YAML privately. Keep any referenced `!secret` entries available; **do not publish credentials or real card IDs**.
+2. Download a **known-good firmware image** compiled from the previous working configuration: **Install → Download firmware binary** (the label may vary by ESPHome version).
+3. **Important:** a newly compiled image is a restore candidate, **not a byte-for-byte dump** of what is currently installed. For a complete backup of the device, use an appropriate ESP8266 USB/serial flash read-out with the actual board flash size.
+4. Prepare a **USB/serial recovery path** in case the reader becomes unreachable by OTA. ESPHome Safe Mode may help, but recovery is not guaranteed.
+5. Check an existing physical tag and the reader's Home Assistant connection before making changes.
 
-## Stage B – candidate YAML (compile only first)
+**Update a spare reader first.** If you cannot recover the device over USB, understand and accept the possibility of an unrecoverable remote OTA failure until you regain physical access.
 
-Keep the entire pre-existing YAML intact. Append exactly this block (it is additive and does not create a second NFC scanner):
+## Add the external component
 
-```yaml
+Keep the original Adonno package, existing `wifi:`, `api:`, `ota:` and other settings. Add this block **at the top YAML level** (not nested beneath `wifi:`):
+
+~~~yaml
 external_components:
   - source: github://DA6IT/esphome-adonno-nfc@f89b5ef7f21067ecf64ed1b2a77bb322b8541df4
     components: [pn532_i2c]
-```
+~~~
 
-If `external_components:` already exists, **merge into its existing list** instead of declaring the key again. **Do not modify the original `packages:` Adonno reference** or Wi-Fi/API/OTA values for this first test.
+If `external_components:` already exists, merge this entry into the existing list rather than declaring it twice. **Do not create a second `pn532_i2c:` scanner.**
 
-Use ESPHome's config validation, then **Install → Manual download** to compile/download a candidate binary without installing it. Do not choose "Wirelessly"/"Plug into this computer" until separately approved.
+For orientation, this is how the new block fits alongside the existing Adonno package (this is an **example**, not a complete replacement config):
 
-The GitHub CI validates the exact component reference against ESPHome 2026.9.1 in `examples/tagreader-remote-ci.yaml`.
+~~~yaml
+substitutions:
+  name: my-adonno-reader
 
-## Stage C – only after approved firmware update
+packages:
+  adonno.tag_reader: github://adonno/tagreader/tagreader.yaml
 
-1. Power Reader 1 from a stable supply; verify HA/ESPHome are working.
-2. Install the tested candidate on Reader 1 only.
-3. Immediately verify LED, buzzer, OTA connection, original physical card / UID / NDEF and HA forwarding.
-4. Open the Android SVN app member card, activate its presentation window, present the phone, and check that the **actual EasyVerein card number**, not the random HCE UID, is reported. Share *redacted* logs only.
-5. Test inactive HCE, an unrelated ISO-DEP card, repeated presentations, card removal and a restart. Failure must not emit a random HCE UID.
-6. If behavior regresses, stop and restore the known-good firmware through OTA if available, or USB/serial if OTA stops working. Do not use the Naturbad reader for testing.
+# Existing Wi-Fi, API, OTA and esphome configuration remains unchanged.
 
-All NFC card numbers in example documentation are fabricated. Static card numbers do **not** provide cryptographic clone/replay protection.
+external_components:
+  - source: github://DA6IT/esphome-adonno-nfc@f89b5ef7f21067ecf64ed1b2a77bb322b8541df4
+    components: [pn532_i2c]
+~~~
+
+The component is pinned to a specific tested Git commit. Do not replace it with `@main` on unattended devices.
+
+## Build, install and check
+
+1. **Save** the ESPHome YAML and resolve any validation errors.
+2. Choose **Install → Download firmware binary** to compile a candidate **without flashing**.
+3. Keep the previous firmware binary backed up.
+4. When ready, install **only on the test reader** using the normal ESPHome **Install → Wirelessly / Over the network** option.
+5. After reboot, check ESPHome logs for Wi-Fi/API connectivity, successful PN532 I²C initialization, healthy boot, and working LED/buzzer.
+6. Scan a **physical MIFARE Ultralight** tag first. Its original UID path should still work.
+7. Present a phone running a **compatible HCE app**, as specified in [HCE-PROTOCOL.md](HCE-PROTOCOL.md). Home Assistant should display the **APDU card number**, not a random phone UID.
+8. Check the HCE app's inactive/expired presentation behavior, then verify any downstream workflow separately.
+
+A success in `esphome compile` does not prove NFC compatibility on your particular reader.
+
+## Restore if something goes wrong
+
+If ESPHome OTA still works, restore your previous YAML and reflash the **known-good** firmware image through a compatible OTA method. If the reader no longer connects, use your prepared **USB/serial recovery method** and appropriate original firmware.
+
+Do **not** experiment on a reader that is already needed for day-to-day access control. Review the [test checklist](TESTING.md) and [security warning](../SECURITY.md) before wider deployment.
