@@ -6,7 +6,7 @@ This is an early reader-side NFC HCE/APDU prototype, **not a secure credential o
 
 ## Compatibility
 
-The documented implementation has been tested with **ESPHome 2026.9.1 / ESP8266 / PN532 I²C** only. No security or reliability warranty is implied for other versions, hardware or production deployments.
+The documented implementation has been hardware-tested with **ESPHome 2026.9.1 / ESP8266 / PN532 I²C** only; the ESPHome 2026.10.0 port is so far verified by CI only. No security or reliability warranty is implied for other versions, hardware or production deployments.
 
 ## Reporting a security concern
 

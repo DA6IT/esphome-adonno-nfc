@@ -1,0 +1,17 @@
+# Integration smoke test for ESPHome 2026.10.x: component loaded from the pinned
+# public GitHub commit exactly as readers install it.
+# This file has NO private Wi-Fi credentials. Never flash test CI images.
+substitutions:
+  name: adonno-remote-ci
+  friendly_name: Adonno Remote CI
+
+packages:
+  adonno.tag_reader: github://adonno/tagreader/tagreader.yaml@23c2ebb880577a906c89f9fa90905bafcea4f446
+
+external_components:
+  - source: github://DA6IT/esphome-adonno-nfc@7b19ffeea58cb037f0c99961cce434f883e3335d
+    components: [pn532_i2c]
+
+esphome:
+  name: ${name}
+  name_add_mac_suffix: false

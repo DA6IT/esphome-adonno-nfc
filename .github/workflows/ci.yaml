@@ -49,10 +49,8 @@ jobs:
       - name: Compile adopted-reader structure (no flashing, no OTA)
         run: esphome compile examples/tagreader-adopted-ci.yaml
       - name: Validate pinned remote component integration
-        if: hashFiles('examples/tagreader-remote-ci.yaml') != ''
         run: esphome config examples/tagreader-remote-ci.yaml
       - name: Compile pinned remote component integration (no flashing, no OTA)
-        if: hashFiles('examples/tagreader-remote-ci.yaml') != ''
         run: esphome compile examples/tagreader-remote-ci.yaml
       - name: Remove dummy secrets
         if: always()
