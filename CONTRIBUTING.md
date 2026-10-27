@@ -14,12 +14,12 @@ Search [existing issues](https://github.com/DA6IT/esphome-adonno-nfc/issues) fir
 - Make small, reviewable changes; keep Adonno's original automation and physical-tag behavior.
 - Never forward randomized Android HCE UIDs as member identifiers.
 - Add positive and negative tests for APDU parsing and errors where relevant.
-- Pass the Linux CI: parser tests and ESPHome 2026.9.1 configuration/compile checks. CI never deploys.
+- Pass the Linux CI: reader logic tests, ESPHome 2026.10.0 configuration/compile checks and the 2026.9.1 restore build. CI never deploys.
 - If reusing ESPHome C++ runtime code, preserve GPLv3 notices and original attribution. See [upstream licensing](docs/UPSTREAM.md).
 - Report **actual hardware test results** separately from compile-only results.
 
 ## Compatibility philosophy
 
-Only ESPHome **2026.9.1 / ESP8266 / PN532 I²C** is currently verified. The app AID, commands and card format are fixed in the current implementation; expanded support needs compatibility testing.
+Only **ESP8266 / PN532 I²C** is supported: ESPHome **2026.9.1** is hardware-verified (pin `f89b5ef`), the **2026.10.0** port is CI-verified only. Every ESPHome update needs a diff against [docs/UPSTREAM.md](docs/UPSTREAM.md) and a hardware regression test. The app AID, commands and card format are fixed in the current implementation; expanded support needs compatibility testing.
 
 Please read [SECURITY.md](SECURITY.md) before reporting vulnerabilities.

@@ -9,29 +9,72 @@ permissions:
   contents: read
 
 jobs:
-  parser:
+  logic-tests:
+    name: Reader logic tests (native C++)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compile and run APDU parser tests
+      - name: Compile and run APDU, presence and scenario tests (ASan/UBSan)
         run: |
-          g++ -std=c++17 -Wall -Wextra -Werror -pedantic tests/hce_protocol_test.cpp -o /tmp/hce_protocol_test
+          g++ --version
+          g++ -std=c++20 -Wall -Wextra -Werror -pedantic -Wconversion \
+              -fsanitize=address,undefined -fno-sanitize-recover=all -g \
+              tests/hce_protocol_test.cpp -o /tmp/hce_protocol_test
           /tmp/hce_protocol_test
-  esphome:
+
+  esphome-2026-10:
+    name: ESPHome 2026.10.0 / ESP8266 D1 mini compile
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Install pinned ESPHome
-        run: python -m pip install esphome==2026.9.1
-      - name: Validate config without secrets
+        run: python -m pip install esphome==2026.10.0
+      - name: Write throw-away dummy secrets (never real credentials)
+        run: |
+          {
+            echo 'wifi_ssid: "ci-dummy-ssid"'
+            echo 'wifi_password: "ci-dummy-password"'
+            echo "api_encryption_key: \"$(openssl rand -base64 32)\""
+          } > examples/secrets.yaml
+      - name: Validate minimal example (local component)
         run: esphome config examples/tagreader-ci.yaml
-      - name: Compile ESP8266 firmware only (no flashing, no OTA)
+      - name: Compile minimal example (no flashing, no OTA)
         run: esphome compile examples/tagreader-ci.yaml
+      - name: Validate adopted-reader structure (encrypted API, Wi-Fi secrets)
+        run: esphome config examples/tagreader-adopted-ci.yaml
+      - name: Compile adopted-reader structure (no flashing, no OTA)
+        run: esphome compile examples/tagreader-adopted-ci.yaml
       - name: Validate pinned remote component integration
         run: esphome config examples/tagreader-remote-ci.yaml
-      - name: Compile remote component integration (no flashing, no OTA)
+      - name: Compile pinned remote component integration (no flashing, no OTA)
         run: esphome compile examples/tagreader-remote-ci.yaml
+      - name: Remove dummy secrets
+        if: always()
+        run: rm -f examples/secrets.yaml
+
+  esphome-2026-9-1-restore:
+    name: ESPHome 2026.9.1 restore build + version guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install known-good ESPHome
+        run: python -m pip install esphome==2026.9.1
+      - name: Compile known-good restore build (pin f89b5ef, Adonno a8bb6fc)
+        run: esphome compile examples/tagreader-restore-2026.9.1-ci.yaml
+      - name: Current component must refuse ESPHome 2026.9.1 with a clear message
+        run: |
+          set +e
+          esphome config examples/tagreader-ci.yaml > /tmp/guard.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/guard.log
+          test "$status" -ne 0
+          grep -q "requires at least ESPHome version 2026.10.0" /tmp/guard.log

@@ -3,7 +3,8 @@
 **ESPHome + PN532 I²C · Android Host Card Emulation · ISO-DEP / APDU · Home Assistant**
 
 [![Build and test](https://github.com/DA6IT/esphome-adonno-nfc/actions/workflows/ci.yaml/badge.svg)](https://github.com/DA6IT/esphome-adonno-nfc/actions/workflows/ci.yaml)
-[![ESPHome 2026.9.1](https://img.shields.io/badge/ESPHome-2026.9.1-03A9F4)](https://esphome.io/)
+[![ESPHome 2026.10.0](https://img.shields.io/badge/ESPHome-2026.10.0%20(CI)-03A9F4)](docs/INSTALL-TEST.md)
+[![ESPHome 2026.9.1](https://img.shields.io/badge/ESPHome-2026.9.1%20(hardware%20tested)-03A9F4)](docs/TESTING.md)
 [![License GPLv3](https://img.shields.io/badge/License-GPLv3-blue)](LICENSE)
 [![Hardware tested](https://img.shields.io/badge/Hardware-tested%20prototype-orange)](docs/TESTING.md)
 
@@ -11,11 +12,29 @@ Make an existing **[Adonno NFC TagReader](https://github.com/adonno/tagreader)**
 
 **Good news:** physical MIFARE Ultralight cards still work, and you do **not** need to fork the original Adonno firmware, replace your Home Assistant automations or add a second PN532 scanner.
 
-> **Status: hardware-tested prototype.** Successful physical-card and Android-HCE scans were verified on an ESP8266 Adonno reader with ESPHome 2026.9.1. A second matching reader boots and reconnects with the extension, but its NFC/Node-RED workflow has not yet been tested on-site. This is **not** a secure, production-certified access-control solution.
+> **Status: hardware-tested prototype.** Successful physical-card and Android-HCE scans were verified on an ESP8266 Adonno reader with ESPHome 2026.9.1. A second matching reader boots and reconnects with the extension, but its NFC/Node-RED workflow has not yet been tested on-site. The **ESPHome 2026.10.0 port** compiles and passes the automated tests in CI but has **not yet been tested on hardware**. This is **not** a secure, production-certified access-control solution.
 
 ## Quick start: add one ESPHome block
 
-Already using the [Adonno TagReader](https://github.com/adonno/tagreader) with **ESP8266 + PN532 over I²C**? Keep your existing configuration and add this **top-level** YAML block:
+Already using the [Adonno TagReader](https://github.com/adonno/tagreader) with **ESP8266 + PN532 over I²C**? Keep your existing configuration and add a **top-level** `external_components` block. The pin **must match your ESPHome release**:
+
+| ESPHome | Component pin | Adonno package | Status |
+| --- | --- | --- | --- |
+| **2026.10.x** | `7b19ffeea58cb037f0c99961cce434f883e3335d` | `@23c2ebb880577a906c89f9fa90905bafcea4f446` ([why](docs/UPSTREAM.md)) | CI-tested, **hardware test pending** |
+| **2026.9.1** | `f89b5ef7f21067ecf64ed1b2a77bb322b8541df4` | master (`a8bb6fc…`) | **Hardware tested** |
+
+ESPHome 2026.10.x:
+
+~~~yaml
+packages:
+  adonno.tag_reader: github://adonno/tagreader/tagreader.yaml@23c2ebb880577a906c89f9fa90905bafcea4f446
+
+external_components:
+  - source: github://DA6IT/esphome-adonno-nfc@7b19ffeea58cb037f0c99961cce434f883e3335d
+    components: [pn532_i2c]
+~~~
+
+ESPHome 2026.9.1 (known-good, hardware tested):
 
 ~~~yaml
 external_components:
@@ -23,11 +42,13 @@ external_components:
     components: [pn532_i2c]
 ~~~
 
+Adonno master does not compile on ESPHome 2026.10.0 at all ([adonno/tagreader#307](https://github.com/adonno/tagreader/issues/307)); `23c2ebb` is master plus the one-line fix from [adonno/tagreader#306](https://github.com/adonno/tagreader/pull/306).
+
 **Do not nest `external_components` under `wifi`.** If the key exists already, add this source to the existing list. Keep the original Adonno `packages`, API encryption, Wi-Fi, OTA and reader settings intact.
 
-**Before updating:** back up the original configuration and obtain a working restore image. Compile the new firmware first and test it on a spare reader. A failed OTA installation can require USB/serial recovery. The Git commit above is intentionally pinned to the **hardware-tested source**.
+**Before updating:** back up the original configuration and obtain a working restore image (build it *before* upgrading ESPHome itself). Compile the new firmware first and test it on a spare reader. A failed OTA installation can require USB/serial recovery. Always pin a commit, never `@main`.
 
-**→ [Full installation, checks and rollback guide](docs/INSTALL-TEST.md)**
+**→ [Full installation, update, checks and rollback guide](docs/INSTALL-TEST.md)**
 
 ## Why this extension exists
 
@@ -59,6 +80,7 @@ For a successful Android scan, the reader creates a **temporary, in-memory** Hom
 
 | Test / platform | Result |
 | --- | --- |
+| ESPHome **2026.10.0**, ESP8266, PN532 I²C | **Compiled + automated logic tests; hardware test pending** |
 | ESPHome **2026.9.1**, ESP8266, PN532 I²C | **Compiled and tested** |
 | Existing Adonno LED, buzzer, Wi-Fi and HA API | **Working** |
 | Physical MIFARE Ultralight card | **Working** |
@@ -68,6 +90,8 @@ For a successful Android scan, the reader creates a **temporary, in-memory** Hom
 | Second matching ESP8266 reader | **Updated, boots and reconnects; NFC not yet tested there** |
 | Node-RED end-to-end, repeated-scan stress tests | **Pending** |
 | ESP32, PN532 SPI, other ESPHome versions, iPhone HCE | **Not verified** |
+
+Hardware rows above refer to the 2026.9.1 build.
 
 The initial Android hardware test included an unsuccessful first AID SELECT and successful subsequent attempt, plus ESPHome PN532 timing warnings. See [the test report](docs/TESTING.md) for honest limitations and regression checks.
 
