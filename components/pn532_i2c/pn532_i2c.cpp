@@ -11,6 +11,7 @@
 #include "esphome/core/helpers.h"
 
 #include <algorithm>
+#include <array>
 
 // Based on:
 // - https://cdn-shop.adafruit.com/datasheets/PN532C106_Application+Note_v1.2.pdf
@@ -20,6 +21,11 @@
 namespace esphome::pn532_i2c {
 
 static const char *const TAG = "pn532_i2c";
+
+// hce_protocol.h is ESPHome-independent; keep its copies of upstream constants in sync.
+static_assert(hce::SEL_RES_ISO_DEP_BIT == pn532::SEL_RES_ISO_DEP, "ISO-DEP SAK bit differs from ESPHome");
+static_assert(hce::MAX_UID_LENGTH == nfc::NFC_UID_MAX_LENGTH, "UID length differs from ESPHome");
+static constexpr size_t MAX_COMMAND_APDU_SIZE = std::max(hce::SELECT_APDU.size(), hce::GET_CARD_APDU.size());
 
 bool PN532I2C::is_read_ready() {
   uint8_t status;
@@ -271,16 +277,17 @@ void PN532I2C::loop() {
 
 bool PN532I2C::exchange_apdu_(std::span<const uint8_t> apdu, pn532::PN532Frame &response) {
   // InDataExchange with target number 1, the target InListPassiveTarget activated.
-  if (apdu.size() + 2 > pn532::PN532_FRAME_MAX_DATA_SIZE)
+  // Our command APDUs are fixed and short; a small array keeps a second 263-byte
+  // PN532Frame off the ESP8266 stack.
+  std::array<uint8_t, 2 + MAX_COMMAND_APDU_SIZE> command{};
+  if (apdu.size() > MAX_COMMAND_APDU_SIZE)
     return false;
-  pn532::PN532Frame command;
-  command.push_back(pn532::PN532_COMMAND_INDATAEXCHANGE);
-  command.push_back(0x01);
-  for (const uint8_t byte : apdu)
-    command.push_back(byte);
+  command[0] = pn532::PN532_COMMAND_INDATAEXCHANGE;
+  command[1] = 0x01;
+  std::copy(apdu.begin(), apdu.end(), command.begin() + 2);
   // in_data_exchange_ rejects a non-zero PN532 status and strips the status byte,
   // so `response` is the ISO 7816 response APDU: data followed by SW1 SW2.
-  return this->in_data_exchange_(std::span<const uint8_t>(command.data(), command.size()), response) &&
+  return this->in_data_exchange_(std::span<const uint8_t>(command.data(), 2 + apdu.size()), response) &&
          response.size() >= 2;
 }
 

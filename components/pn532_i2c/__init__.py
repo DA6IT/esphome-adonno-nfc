@@ -38,13 +38,17 @@ def _warn_untested_esphome(config: ConfigType) -> ConfigType:
 
 
 CONFIG_SCHEMA = cv.All(
+    # version first, so the clear message is not hidden behind schema errors;
+    # (year, month, patch) is the form every ESPHome release accepts
+    cv.require_esphome_version(
+        MIN_ESPHOME_VERSION.major, MIN_ESPHOME_VERSION.minor, MIN_ESPHOME_VERSION.patch
+    ),
+    _warn_untested_esphome,
     pn532.PN532_SCHEMA.extend(
         {
             cv.GenerateID(): cv.declare_id(PN532I2C),
         }
     ).extend(i2c.i2c_device_schema(0x24)),
-    cv.require_esphome_version(MIN_ESPHOME_VERSION),
-    _warn_untested_esphome,
 )
 
 
