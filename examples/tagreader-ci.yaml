@@ -1,10 +1,15 @@
-# Experimental compile-only example. NEVER flash without a backup and approval.
+# Experimental compile-only example for ESPHome 2026.10.x.
+# NEVER flash without a backup and approval.
 substitutions:
   name: adonno-nfc-ci
   friendly_name: Adonno NFC CI
 
 packages:
-  adonno.tag_reader: github://adonno/tagreader/tagreader.yaml@a8bb6fc43e5a687503d1b43edb32855d0de7050a
+  # Adonno master a8bb6fc does not compile on ESPHome 2026.10 (`auto records =
+  # message->get_records();` copies non-copyable records). 23c2ebb is the head of
+  # adonno/tagreader PR #306, a8bb6fc plus exactly that one-line fix
+  # (`auto &records`). It is fetched from the adonno/tagreader repository itself.
+  adonno.tag_reader: github://adonno/tagreader/tagreader.yaml@23c2ebb880577a906c89f9fa90905bafcea4f446
 
 # Override only ESPHome's I2C PN532 adapter; core PN532 and Adonno stay original.
 external_components:

@@ -1,8 +1,10 @@
-# Integration smoke test: remote component loaded exactly as users install it.
+# Known-good RESTORE build for ESPHome 2026.9.1 (rollback path).
+# Remote component pinned to the hardware-tested 2026.9.1 port, original Adonno
+# package unchanged. Compile with `pip install esphome==2026.9.1` only.
 # This file has NO private Wi-Fi credentials. Never flash test CI images.
 substitutions:
-  name: adonno-remote-ci
-  friendly_name: Adonno Remote CI
+  name: adonno-restore-ci
+  friendly_name: Adonno Restore CI
 
 packages:
   adonno.tag_reader: github://adonno/tagreader/tagreader.yaml@a8bb6fc43e5a687503d1b43edb32855d0de7050a

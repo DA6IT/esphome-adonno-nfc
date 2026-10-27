@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Derived from ESPHome 2026.9.1, with HCE/ISO-DEP additions.
+// Derived from ESPHome 2026.10.0, with HCE/ISO-DEP additions.
 // Original copyright (c) 2019 ESPHome contributors; see docs/UPSTREAM.md.
+//
+// The I2C transport (is_read_ready .. read_response_length_) is byte-for-byte
+// the ESPHome 2026.10.0 code. loop() is ESPHome 2026.10.0 PN532::loop() with the
+// HCE deltas documented in docs/UPSTREAM.md.
 #include "pn532_i2c.h"
-#include "hce_protocol.h"
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
+#include "esphome/core/helpers.h"
+
+#include <algorithm>
 
 // Based on:
 // - https://cdn-shop.adafruit.com/datasheets/PN532C106_Application+Note_v1.2.pdf
@@ -16,30 +22,34 @@ namespace esphome::pn532_i2c {
 static const char *const TAG = "pn532_i2c";
 
 bool PN532I2C::is_read_ready() {
-  uint8_t ready;
-  if (!this->read_bytes_raw(&ready, 1)) {
+  uint8_t status;
+  if (!this->read_bytes_raw(&status, 1)) {
     return false;
   }
-  return ready == 0x01;
+  // only bit 0 (RDY) of the status byte is defined (UM0701-02, 6.2.4)
+  return status & 0x01;
 }
 
-bool PN532I2C::write_data(const std::vector<uint8_t> &data) {
+bool PN532I2C::write_data(const std::span<const uint8_t> data) {
   return this->write(data.data(), data.size()) == i2c::ERROR_OK;
 }
 
-bool PN532I2C::read_data(std::vector<uint8_t> &data, uint8_t len) {
+bool PN532I2C::read_data(pn532::PN532Frame &data, size_t len) {
+  if (len + 1 > pn532::PN532_FRAME_MAX_SIZE) {
+    return false;
+  }
   delay(1);
 
   if (this->read_ready_(true) != pn532::PN532ReadReady::READY) {
     return false;
   }
 
+  // the PN532 prefixes every frame with a status byte
   data.resize(len + 1);
-  this->read_bytes_raw(data.data(), len + 1);
-  return true;
+  return this->read_bytes_raw(data.data(), len + 1);
 }
 
-bool PN532I2C::read_response(uint8_t command, std::vector<uint8_t> &data) {
+bool PN532I2C::read_response(uint8_t command, pn532::PN532Frame &data) {
   ESP_LOGV(TAG, "Reading response");
   uint8_t len = this->read_response_length_();
   if (len == 0) {
@@ -67,33 +77,33 @@ bool PN532I2C::read_response(uint8_t command, std::vector<uint8_t> &data) {
     return false;
   }
 
-  data.erase(data.begin(), data.begin() + 6);  // Remove headers
-
+  // frame: status, preamble, start code (2), LEN, LCS, TFI, command response code, data, DCS, postamble
+  constexpr size_t tfi_offset = 6;
   uint8_t checksum = 0;
-  for (int i = 0; i < len + 1; i++) {
-    uint8_t dat = data[i];
-    checksum += dat;
+  for (size_t i = 0; i < len + 1U; i++) {
+    checksum += data[tfi_offset + i];
   }
   checksum = ~checksum + 1;
 
-  if (data[len + 1] != checksum) {
-    ESP_LOGV(TAG, "read data invalid checksum! %02X != %02X", data[len], checksum);
+  if (data[tfi_offset + len + 1] != checksum) {
+    ESP_LOGV(TAG, "read data invalid checksum! %02X != %02X", data[tfi_offset + len + 1], checksum);
     return false;
   }
 
-  if (data[len + 2] != 0x00) {
+  if (data[tfi_offset + len + 2] != 0x00) {
     ESP_LOGV(TAG, "read data invalid postamble!");
     return false;
   }
 
-  data.erase(data.begin(), data.begin() + 2);  // Remove TFI and command code
-  data.erase(data.end() - 2, data.end());      // Remove checksum and postamble
+  // keep only the data bytes that follow the command response code
+  std::copy(data.begin() + tfi_offset + 2, data.begin() + tfi_offset + len + 1, data.begin());
+  data.resize(len - 1);
 
   return true;
 }
 
 uint8_t PN532I2C::read_response_length_() {
-  std::vector<uint8_t> data;
+  pn532::PN532Frame data;
   if (!this->read_data(data, 6)) {
     return 0;
   }
@@ -125,7 +135,20 @@ uint8_t PN532I2C::read_response_length_() {
 
 void PN532I2C::dump_config() {
   PN532::dump_config();
+  ESP_LOGCONFIG(TAG, "  Adonno HCE extension: %s", hce::EXTENSION_VERSION);
   LOG_I2C_DEVICE(this);
+}
+
+void PN532I2C::handle_tag_absent_() {
+#ifdef PN532_ON_TAG_REMOVED_TRIGGER_COUNT
+  if (this->presence_.removal_pending()) {
+    auto tag = make_unique<nfc::NfcTag>(this->presence_.uid());
+    for (auto *trigger : this->triggers_ontagremoved_)
+      trigger->process(tag);
+  }
+#endif
+  this->presence_.reset();
+  this->turn_off_rf_();
 }
 
 void PN532I2C::loop() {
@@ -137,7 +160,7 @@ void PN532I2C::loop() {
     return;
 
   bool success = false;
-  std::vector<uint8_t> read;
+  pn532::PN532Frame read;
 
   if (ready == pn532::READY) {
     success = this->read_response(pn532::PN532_COMMAND_INLISTPASSIVETARGET, read);
@@ -147,79 +170,57 @@ void PN532I2C::loop() {
 
   this->requested_read_ = false;
 
-  if (!success) {
-    // Something failed
-    if (!this->current_uid_.empty() && this->tag_reported_) {
-      auto tag = make_unique<nfc::NfcTag>(this->current_uid_);
-      for (auto *trigger : this->triggers_ontagremoved_)
-        trigger->process(tag);
-    }
-    this->current_uid_ = {};
-    this->tag_reported_ = false;
-    this->turn_off_rf_();
-    return;
+  const hce::Target target = hce::parse_in_list_passive_target(std::span<const uint8_t>(read.data(), read.size()));
+  switch (hce::poll_outcome(success, target.status)) {
+    case hce::PollOutcome::TARGET:
+      break;
+    case hce::PollOutcome::ABSENT:
+      // read failed, no tags found or too many
+      this->handle_tag_absent_();
+      return;
+    case hce::PollOutcome::ANOMALY:
+      // Empty or truncated frame: not treated as a removal (see hce::poll_outcome).
+      ESP_LOGW(TAG, "PN532 returned an incomplete tag response");
+      this->status_set_warning();
+      this->turn_off_rf_();
+      return;
+    case hce::PollOutcome::INVALID:
+    default:
+      // oops, pn532 returned invalid data
+      this->turn_off_rf_();
+      return;
   }
 
-  if (read.empty()) {
-    ESP_LOGW(TAG, "PN532 returned an empty tag response");
-    this->status_set_warning();
-    this->turn_off_rf_();
-    return;
-  }
-  uint8_t num_targets = read[0];
-  if (num_targets != 1) {
-    // no tags found or too many
-    if (!this->current_uid_.empty() && this->tag_reported_) {
-      auto tag = make_unique<nfc::NfcTag>(this->current_uid_);
-      for (auto *trigger : this->triggers_ontagremoved_)
-        trigger->process(tag);
-    }
-    this->current_uid_ = {};
-    this->tag_reported_ = false;
-    this->turn_off_rf_();
-    return;
-  }
-
-  if (read.size() < 6) {
-    this->status_set_warning();
-    this->turn_off_rf_();
-    return;
-  }
-  uint8_t nfcid_length = read[5];
-  if (nfcid_length > nfc::NFC_UID_MAX_LENGTH || read.size() < 6U + nfcid_length) {
-    // oops, pn532 returned invalid data
-    return;
-  }
-  nfc::NfcTagUid nfcid(read.begin() + 6, read.begin() + 6 + nfcid_length);
+  nfc::NfcTagUid nfcid(target.uid.begin(), target.uid.end());
 
   bool report = true;
+#ifdef PN532_BINARY_SENSOR_COUNT
   for (auto *bin_sens : this->binary_sensors_) {
     if (bin_sens->process(nfcid)) {
       report = false;
     }
   }
+#endif
 
-  if (nfcid.size() == this->current_uid_.size()) {
-    bool same_uid = true;
-    for (size_t i = 0; i < nfcid.size(); i++)
-      same_uid &= nfcid[i] == this->current_uid_[i];
-    if (same_uid)
-      return;
-  }
+  if (this->presence_.is_current(target.uid))
+    return;
 
-  this->current_uid_ = nfcid;
+  this->presence_.set_current(target.uid);
+  const uint8_t tag_type = pn532::tag_type_from_sel_res(target.sel_res);
 
-  if (next_task_ == READ) {
-    // SAK bit 0x20 signals ISO-DEP. Never send a random HCE UID as an event.
-    auto tag = (read[4] & 0x20) ? this->read_hce_tag_(nfcid) : this->read_tag_(nfcid);
+  if (this->next_task_ == READ) {
+    // ISO-DEP (SAK bit 0x20) is read via APDU only. Never send a random HCE UID as an event.
+    std::unique_ptr<nfc::NfcTag> tag = hce::read_new_target(
+        target, this->presence_, [this, &nfcid]() { return this->read_hce_tag_(nfcid); },
+        [this, &nfcid, tag_type]() { return this->read_tag_(nfcid, tag_type); });
     if (!tag) {
-      this->tag_reported_ = false;
       this->turn_off_rf_();
       return;
     }
-    this->tag_reported_ = true;
+#ifdef PN532_ON_TAG_TRIGGER_COUNT
     for (auto *trigger : this->triggers_ontag_)
       trigger->process(tag);
+#endif
 
     if (report) {
       char uid_buf[nfc::FORMAT_UID_BUFFER_SIZE];
@@ -233,32 +234,31 @@ void PN532I2C::loop() {
         }
       }
     }
-  } else if (next_task_ == CLEAN) {
+  } else if (this->next_task_ == CLEAN) {
     ESP_LOGD(TAG, "  Tag cleaning");
-    if (!this->clean_tag_(nfcid)) {
+    if (!this->clean_tag_(nfcid, tag_type)) {
       ESP_LOGE(TAG, "  Tag was not fully cleaned successfully");
     }
     ESP_LOGD(TAG, "  Tag cleaned!");
-  } else if (next_task_ == FORMAT) {
+  } else if (this->next_task_ == FORMAT) {
     ESP_LOGD(TAG, "  Tag formatting");
-    if (!this->format_tag_(nfcid)) {
+    if (!this->format_tag_(nfcid, tag_type)) {
       ESP_LOGE(TAG, "Error formatting tag as NDEF");
     }
     ESP_LOGD(TAG, "  Tag formatted!");
-  } else if (next_task_ == WRITE) {
+  } else if (this->next_task_ == WRITE) {
     if (this->next_task_message_to_write_ != nullptr) {
       ESP_LOGD(TAG, "  Tag writing");
       ESP_LOGD(TAG, "  Tag formatting");
-      if (!this->format_tag_(nfcid)) {
+      if (!this->format_tag_(nfcid, tag_type)) {
         ESP_LOGE(TAG, "  Tag could not be formatted for writing");
       } else {
         ESP_LOGD(TAG, "  Writing NDEF data");
-        if (!this->write_tag_(nfcid, this->next_task_message_to_write_)) {
+        if (!this->write_tag_(nfcid, tag_type, this->next_task_message_to_write_.get())) {
           ESP_LOGE(TAG, "  Failed to write message to tag");
         }
         ESP_LOGD(TAG, "  Finished writing NDEF data");
-        delete this->next_task_message_to_write_;
-        this->next_task_message_to_write_ = nullptr;
+        this->next_task_message_to_write_.reset();
         this->on_finished_write_callback_.call();
       }
     }
@@ -269,52 +269,53 @@ void PN532I2C::loop() {
   this->turn_off_rf_();
 }
 
-
-bool PN532I2C::exchange_apdu_(const std::vector<uint8_t> &apdu, std::vector<uint8_t> &response) {
-  // InDataExchange target number 1 from InListPassiveTarget.
-  std::vector<uint8_t> command{pn532::PN532_COMMAND_INDATAEXCHANGE, 0x01};
-  command.insert(command.end(), apdu.begin(), apdu.end());
-  if (!this->write_command_(command))
+bool PN532I2C::exchange_apdu_(std::span<const uint8_t> apdu, pn532::PN532Frame &response) {
+  // InDataExchange with target number 1, the target InListPassiveTarget activated.
+  if (apdu.size() + 2 > pn532::PN532_FRAME_MAX_DATA_SIZE)
     return false;
-  std::vector<uint8_t> raw;
-  if (!this->read_response(pn532::PN532_COMMAND_INDATAEXCHANGE, raw))
-    return false;
-  if (raw.size() < 3 || raw[0] != 0x00)  // PN532 status byte + ISO 7816 response
-    return false;
-  response.assign(raw.begin() + 1, raw.end());
-  return true;
+  pn532::PN532Frame command;
+  command.push_back(pn532::PN532_COMMAND_INDATAEXCHANGE);
+  command.push_back(0x01);
+  for (const uint8_t byte : apdu)
+    command.push_back(byte);
+  // in_data_exchange_ rejects a non-zero PN532 status and strips the status byte,
+  // so `response` is the ISO 7816 response APDU: data followed by SW1 SW2.
+  return this->in_data_exchange_(std::span<const uint8_t>(command.data(), command.size()), response) &&
+         response.size() >= 2;
 }
 
 std::unique_ptr<nfc::NfcTag> PN532I2C::read_hce_tag_(nfc::NfcTagUid &uid) {
-  // F0 53 56 4E 4D 43 41 52 44 = SVNMCARD; the last 00 is short Le.
-  static const std::vector<uint8_t> select_apdu{
-      0x00, 0xA4, 0x04, 0x00, 0x09, 0xF0, 0x53, 0x56, 0x4E, 0x4D, 0x43, 0x41, 0x52, 0x44, 0x00};
-  static const std::vector<uint8_t> get_card_apdu{0x80, 0xCA, 0x00, 0x00, 0x00};
-  std::vector<uint8_t> response;
-  if (!this->exchange_apdu_(select_apdu, response) || !hce::select_succeeded(response)) {
-    ESP_LOGD(TAG, "ISO-DEP target has no supported app AID (or SELECT failed)");
-    return nullptr;
-  }
-  response.clear();
-  if (!this->exchange_apdu_(get_card_apdu, response)) {
-    ESP_LOGW(TAG, "ISO-DEP card number request failed");
-    return nullptr;
-  }
+  pn532::PN532Frame buffer;
+  auto exchange = [this, &buffer](std::span<const uint8_t> apdu, std::span<const uint8_t> &response) {
+    if (!this->exchange_apdu_(apdu, buffer))
+      return false;
+    response = std::span<const uint8_t>(buffer.data(), buffer.size());
+    return true;
+  };
+
   std::string number;
-  if (!hce::parse_card_number(response, number)) {
-    ESP_LOGW(TAG, "ISO-DEP response missing valid card number and success status");
-    return nullptr;
+  switch (hce::read_hce_presentation(exchange, this->repeat_filter_, millis(), number)) {
+    case hce::HceOutcome::ACCEPTED:
+      break;
+    case hce::HceOutcome::SELECT_FAILED:
+      ESP_LOGD(TAG, "ISO-DEP target has no supported app AID (or SELECT failed)");
+      return nullptr;
+    case hce::HceOutcome::GET_FAILED:
+      ESP_LOGW(TAG, "ISO-DEP card number request failed");
+      return nullptr;
+    case hce::HceOutcome::REPEAT_SUPPRESSED:
+      // Avoid duplicate check-ins: the HCE UID changes on every RF activation.
+      ESP_LOGD(TAG, "Suppressing repeated HCE presentation");
+      return nullptr;
+    case hce::HceOutcome::INVALID_NUMBER:
+    default:
+      ESP_LOGW(TAG, "ISO-DEP response missing valid card number and success status");
+      return nullptr;
   }
-  // Avoid duplicate check-ins if the HCE UID changes during one presentation.
-  if (number == this->last_hce_card_ && millis() - this->last_hce_card_ms_ < 3000UL) {
-    ESP_LOGD(TAG, "Suppressing repeated HCE presentation");
-    return nullptr;
-  }
+
   auto ndef = make_unique<nfc::NdefMessage>();
-  if (!ndef->add_uri_record("https://www.home-assistant.io/tag/" + number))
+  if (!ndef->add_uri_record(hce::ha_tag_uri(number)))
     return nullptr;
-  this->last_hce_card_ = number;
-  this->last_hce_card_ms_ = millis();
   ESP_LOGD(TAG, "Valid HCE card number received");
   return make_unique<nfc::NfcTag>(uid, "ISO-DEP HCE", std::move(ndef));
 }
